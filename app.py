@@ -1,90 +1,124 @@
 import streamlit as st
-import pandas as pd
-import smtplib
-from email.message import EmailMessage
-from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
+import pandas as pd
+from datetime import datetime
 
-# 1. AUTHENTICATION 
-USER_NAME = "Belay Melaku"
-PASSWORD = "@Belay6669"
-TARGET_EMAIL = "melakubelay93@gmail.com"
+# --- PAGE CONFIG & STYLE ---
+st.set_page_config(page_title="CVD Data Abstraction", layout="centered")
 
-def send_email_notification(content):
-    msg = EmailMessage()
-    msg.set_content(f"New Research Data Entry Submitted:\n\n{content}")
-    msg['Subject'] = 'New CVD Data Entry'
-    msg['From'] = TARGET_EMAIL
-    msg['To'] = TARGET_EMAIL
-    
-    # Note: For Gmail, you must use an 'App Password', not your regular password
-    try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-            # smtp.login(TARGET_EMAIL, 'YOUR_GMAIL_APP_PASSWORD_HERE')
-            # smtp.send_message(msg)
-            pass 
-    except Exception as e:
-        st.error(f"Email failed: {e}")
-
-# 2. LOGIN SYSTEM
+# --- LOGIN SYSTEM ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
-    st.title("🔒 Researcher Access")
-    user = st.text_input("Username")
-    pw = st.text_input("Password", type="password")
+    st.title("🔐 Secure Access")
+    user_input = st.text_input("User Name")
+    pass_input = st.text_input("Password", type="password")
     if st.button("Login"):
-        if user == USER_NAME and pw == PASSWORD:
+        if user_input == "Belay Melaku" and pass_input == "@Belay6669":
             st.session_state["logged_in"] = True
             st.rerun()
         else:
-            st.error("Access Denied.")
+            st.error("Invalid credentials.")
     st.stop()
 
-# 3. RESEARCH INTRODUCTION [cite: 9, 10, 15]
+# --- APP INTERFACE ---
 st.title("Cardiovascular Disease (CVD) Data Abstraction")
-st.markdown(f"**Study Title:** { [cite: 15] }")
-st.success("""
-**Researcher's Commitment to Integrity:** By proceeding, you acknowledge that this data is collected for clinical research. Please handle all Patient Medical Records with the highest level of confidentiality and accuracy. Thank you for your professional contribution to this study. [cite: 9, 10]
+
+# Professional Introduction [cite: 9, 10, 15]
+st.markdown("""
+### Confidential Data Entry Portal
+**Study:** *Time to Cardiovascular Disease Event and Its Determinant Among Hypertensive Patients on Follow-Up at Health Centers in Mehal Amhara Saynt District.*
+
+> **Professional Notice:** Please ensure all data points are extracted with clinical precision. The integrity of this research depends on your accurate input. All patient information must be handled with strict confidentiality. 
+> 
+> *Thank you for your valued contribution to this study.*
 """)
 
-# 4. DATA ENTRY FORM [cite: 11, 13]
-with st.form("cvd_research_form", clear_on_submit=True):
-    # Sections 1 & 2
-    hc = st.selectbox("1.1 Health Center", ["Densa HC", "Kotet HC", "Werk-Mawcha HC", "Ahyo HC", "Atronse HC"]) [cite: 17]
-    mrn = st.text_input("1.2 Patient MRN") [cite: 18]
-    
-    # Eligibility Logic [cite: 22, 23, 24, 25]
-    st.subheader("Section 2: Eligibility Checklist")
-    age_check = st.radio("Age ≥18 years?", ["Yes", "No"])
-    pre_cvd = st.radio("Pre-existing CVD before enrolment?", ["Yes", "No"])
+# --- GOOGLE SHEETS CONNECTION ---
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+with st.form("cvd_form", clear_on_submit=True):
+    # SECTION 1: IDENTIFICATION [cite: 16, 17, 18, 20, 21]
+    st.header("Section 1: Identification")
+    hc_name = st.selectbox("1.1 Health Center", ["Densa HC", "Kotet HC", "Werk-Mawcha HC", "Ahyo HC", "Atronse HC"])
+    mrn = st.text_input("1.2 Patient Medical Record Number (MRN)")
+    date_ext = st.date_input("1.3 Date of Extraction")
+    date_enroll = st.date_input("1.4 Date of Enrollment")
+    cohort = st.radio("1.5 Cohort Status", ["Exposed (Hypertensive)", "Unexposed (Normotensive)"])
+
+    # SECTION 2: ELIGIBILITY [cite: 22, 23, 24, 25]
+    st.header("Section 2: Eligibility")
+    age_elig = st.radio("Is Age ≥ 18 years?", ["Yes", "No"])
+    pre_cvd = st.radio("Pre-existing CVD (Stroke/MI/HF) before enrolment?", ["Yes", "No"])
     preg_htn = st.radio("Pregnancy-induced Hypertension?", ["Yes", "No"])
-    
-    eligible = (age_check == "Yes" and pre_cvd == "No" and preg_htn == "No")
-    
-    if not eligible:
-        st.warning("⚠️ Patient is ineligible for this study. Data entry will stop here.")
-    
-    # Section 5: BMI Calculation [cite: 8, 42, 43]
-    st.subheader("Section 5: Measurements")
-    weight = st.number_input("Weight (kg)", min_value=0.0)
-    height = st.number_input("Height (cm)", min_value=0.0)
-    
-    bmi_val = 0.0
-    bmi_cat = "N/A"
-    if weight > 0 and height > 0:
-        bmi_val = round(weight / ((height/100)**2), 2)
-        if bmi_val < 18.5: bmi_cat = "Underweight"
-        elif 18.5 <= bmi_val < 25: bmi_cat = "Normal"
-        elif 25 <= bmi_val < 30: bmi_cat = "Overweight"
+
+    # STOP LOGIC: If any eligibility fails [cite: 23, 24, 25]
+    if age_elig == "No" or pre_cvd == "Yes" or preg_htn == "Yes":
+        st.error("⛔ Patient is INELIGIBLE. Do not proceed.")
+        eligible = False
+    else:
+        eligible = True
+
+    if eligible:
+        # SECTION 3: SOCIO-DEMOGRAPHIC [cite: 26, 27, 28, 31]
+        st.header("Section 3: Socio-Demographic")
+        age = st.number_input("3.1 Age (years)", min_value=18)
+        sex = st.selectbox("3.2 Sex", ["Male", "Female"])
+        occ = st.selectbox("3.5 Occupation", ["Government Employee", "Merchant/Trader", "Farmer", "Unemployed", "Other"])
+        occ_spec = st.text_input("If Other, specify:") if occ == "Other" else ""
+
+        # SECTION 4: LIFESTYLE (Conditional Logic) [cite: 33, 35, 37]
+        st.header("Section 4: Lifestyle")
+        alcohol = st.selectbox("4.2 Alcohol Consumption", ["Non-user", "Current User"])
+        # Conditional Skip [cite: 7, 35]
+        drinks = 0
+        if alcohol == "Current User":
+            drinks = st.number_input("Average standard drinks/day", min_value=0)
+        
+        phys_act = st.radio("4.4 Physical Activity", ["Physically Active", "Inactive"])
+
+        # SECTION 5: CLINICAL & BMI [cite: 40, 42, 43, 8]
+        st.header("Section 5: Clinical Measurements")
+        sbp = st.number_input("SBP (mmHg)")
+        dbp = st.number_input("DBP (mmHg)")
+        weight = st.number_input("Weight (kg)", min_value=1.0)
+        height = st.number_input("Height (cm)", min_value=1.0)
+        
+        # Auto BMI Calculation [cite: 8, 42, 43]
+        bmi = round(weight / ((height/100)**2), 2)
+        if bmi < 18.5: bmi_cat = "Underweight"
+        elif 18.5 <= bmi < 25: bmi_cat = "Normal"
+        elif 25 <= bmi < 30: bmi_cat = "Overweight"
         else: bmi_cat = "Obese"
-        st.write(f"**Automatic BMI Result:** {bmi_val} ({bmi_cat})")
+        st.info(f"Calculated BMI: {bmi} ({bmi_cat})")
 
-    submitted = st.form_submit_button("Submit and Reset Form")
+        # SECTION 8: OUTCOME [cite: 56, 57, 58, 59]
+        st.header("Section 8: Outcome")
+        cvd_event = st.radio("8.1 CVD Event Occurred?", ["Yes", "No"])
+        # Conditional Skip [cite: 7, 57]
+        cvd_type = ""
+        cvd_date = None
+        if cvd_event == "Yes":
+            cvd_type = st.selectbox("8.2 Type of Event", ["Stroke", "MI", "Heart Failure"])
+            cvd_date = st.date_input("8.3 Date of Event")
 
-    if submitted:
-        if eligible:
-            st.balloons()
-            st.success("Data recorded and sent to Google Sheets. Form reset for next entry.") [cite: 11]
-            # Logic to append to sheet and send email would go here
+    submit_button = st.form_submit_button("Submit Data to Google Sheets")
+
+if submit_button:
+    if eligible:
+        # Create Dataframe for Google Sheets [cite: 4, 5, 11]
+        data = pd.DataFrame([{
+            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "HC Name": hc_name, "MRN": mrn, "Age": age, "Sex": sex, 
+            "Alcohol": alcohol, "Drinks/Day": drinks, "BMI": bmi, "Category": bmi_cat,
+            "CVD Event": cvd_event, "Event Type": cvd_type, "Event Date": str(cvd_date)
+        }])
+        
+        # Append logic
+        existing_data = conn.read(worksheet="Sheet1")
+        updated_data = pd.concat([existing_data, data], ignore_index=True)
+        conn.update(worksheet="Sheet1", data=updated_data)
+        
+        st.success("✅ Data successfully recorded! The form has been reset for the next patient.")
+        st.balloons()
