@@ -1,102 +1,180 @@
 import streamlit as st
-import pandas as pd
-from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
+import pandas as pd
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import datetime
 
-# Fix for NameError: Function defined before use
+# --- APP CONFIGURATION ---
+st.set_page_config(page_title="CVD Data Abstraction", layout="wide")
+
+# --- AUTHENTICATION ---
 def check_password():
-    """Returns True if the user had the correct password."""
-    def password_entered():
-        if st.session_state["username"] == "Belay Melaku" and st.session_state["password"] == "@Belay6669":
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]  # don't store password
-            del st.session_state["username"]
-        else:
-            st.session_state["password_correct"] = False
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
 
-    if "password_correct" not in st.session_state:
-        st.title("Cardiovascular Disease Data Portal")
-        st.text_input("Username", on_change=password_entered, key="username")
-        st.text_input("Password", type="password", on_change=password_entered, key="password")
+    if not st.session_state.authenticated:
+        st.title("🔐 Secure Data Entry Login")
+        user = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        if st.button("Login"):
+            if user == "Belay Melaku" and password == "@Belay6669":
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Invalid credentials.")
         return False
-    elif not st.session_state["password_correct"]:
-        st.text_input("Username", on_change=password_entered, key="username")
-        st.text_input("Password", type="password", on_change=password_entered, key="password")
-        st.error("😕 User not known or password incorrect")
-        return False
-    else:
-        return True
+    return True
 
+# --- EMAIL FUNCTION ---
+def send_summary_email(data_dict):
+    sender = st.secrets["email_sender"]
+    pwd = st.secrets["email_password"]
+    receiver = st.secrets["email_receiver"]
+    
+    msg = MIMEMultipart()
+    msg['From'] = sender
+    msg['To'] = receiver
+    msg['Subject'] = f"New CVD Data Submission: MRN {data_dict['Patient MRN']}"
+    
+    body = "A new data abstraction form has been submitted.\n\nSummary:\n"
+    for key, value in data_dict.items():
+        body += f"{key}: {value}\n"
+    
+    msg.attach(MIMEText(body, 'plain'))
+    
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender, pwd)
+        server.send_message(msg)
+        server.quit()
+    except Exception as e:
+        st.error(f"Email could not be sent: {e}")
+
+# --- MAIN APP ---
 if check_password():
-    st.title("CVD Event Data Abstraction Checklist")
-    st.markdown("---")
-    st.write("### Investigator Instructions")
-    st.info("""Please ensure all clinical data is abstracted with the highest precision. 
-    Maintaining patient confidentiality is our primary ethical duty. 
-    Thank you for your dedication to accurate medical research.""")
+    st.title("📋 Cardiovascular Disease Data Abstraction")
+    st.info("Study Title: Time to Cardiovascular Disease Event and Its Determinant Among Hypertensive Patients.")
 
+    # Privacy Disclaimer
+    with st.expander("⚖️ Data Privacy & Confidentiality Agreement"):
+        st.warning("""
+        **Confidentiality:** Patient names must NEVER be recorded. Use only Medical Record Numbers (MRN) 
+        and Study IDs to ensure anonymity. Data is stored securely for research purposes only. [cite: 5, 6]
+        """)
+
+    # Google Sheets Connection
     conn = st.connection("gsheets", type=GSheetsConnection)
 
-    with st.form("cvd_data_form", clear_on_submit=True):
-        # Section 1
-        st.subheader("SECTION 1: IDENTIFICATION")
-        hc_name = st.selectbox("Health Center", ["Densa HC", "Kotet HC", "Werk-Mawcha HC", "Ahyo HC", "Atronse HC"])
-        mrn = st.text_input("Patient MRN")
-        enroll_date = st.date_input("Date of Enrollment (Baseline Visit)")
-        
-        # Section 3: Lifestyle (With conditional logic)
-        st.subheader("SECTION 3: LIFESTYLE")
-        alcohol = st.selectbox("Alcohol Consumption", ["Non-user", "Current User"])
-        avg_drinks = 0
-        if alcohol == "Current User":
-            avg_drinks = st.number_input("Average standard drinks/day", min_value=0.0, step=0.1)
-
-        # Section 4: Clinical (With automatic calculations)
-        st.subheader("SECTION 4: CLINICAL MEASUREMENTS")
+    # Form initialization
+    with st.form("cvd_form", clear_on_submit=True):
+        # Section 1: Administrative
+        st.subheader("Section 1: Administrative & Eligibility")
         col1, col2 = st.columns(2)
-        sbp = col1.number_input("SBP (mmHg)", min_value=50, max_value=250)
-        dbp = col2.number_input("DBP (mmHg)", min_value=30, max_value=150)
-        weight = col1.number_input("Weight (kg)", min_value=20.0)
-        height = col2.number_input("Height (cm)", min_value=100.0)
+        with col1:
+            study_id = st.text_input("Study ID")
+            facility = st.selectbox("Facility Name", ["1=Densa", "2=Kotet", "3=Work-Mawcha", "4=Ahyo", "5=Atrons"])
+            mrn = st.text_input("Patient MRN")
+        with col2:
+            cohort = st.radio("Cohort Group", ["1=Exposed (Hypertensive)", "2=Unexposed (Normotensive)"])
+            enroll_date = st.date_label = st.text_input("Date of Enrollment (DD/MM/YYYY E.C.)")
+            followup_end = st.text_input("Follow-up End Date (DD/MM/YYYY E.C.)")
 
-        # Automatic BP Stage Logic
-        bp_stage = "Normal"
-        if sbp >= 160 or dbp >= 110: bp_stage = "Stage 3/4"
-        elif 160 > sbp >= 160 or 109 >= dbp >= 100: bp_stage = "Stage 2"
-        elif 159 >= sbp >= 140 or 99 >= dbp >= 91: bp_stage = "Stage 1"
-        elif 139 >= sbp >= 121 or 89 >= dbp >= 81: bp_stage = "Pre-HTN"
+        st.divider()
 
-        # Automatic BMI Logic
-        bmi_val = round(weight / ((height/100)**2), 2)
-        bmi_cat = "Normal"
-        if bmi_val < 18.5: bmi_cat = "Underweight"
-        elif 25 <= bmi_val <= 29.9: bmi_cat = "Overweight"
-        elif bmi_val >= 30: bmi_cat = "Obese"
+        # Section 3 & 4: Demographics & Lifestyle
+        st.subheader("Socio-Demographic & Lifestyle")
+        c3, c4 = st.columns(2)
+        with c3:
+            age = st.number_input("Age (Years)", min_value=0, max_value=120)
+            sex = st.selectbox("Sex", ["1=Male", "2=Female"])
+            alcohol = st.selectbox("Alcohol Consumption", ["1=Non-user", "2=Current User"])
+            
+            # Dynamic Logic for Alcohol
+            drink_count = "N/A"
+            if alcohol == "2=Current User":
+                drink_count = st.number_input("Average drinks/day", min_value=0.0)
 
-        # Section 7: Outcome
-        st.subheader("SECTION 7: OUTCOME")
-        cvd_occurred = st.radio("CVD Event Occurred?", ["No", "Yes"])
-        event_type = "None"
-        event_date = None
-        if cvd_occurred == "Yes":
-            event_type = st.selectbox("Event Type", ["Stroke", "Myocardial Infarction", "Heart Failure"])
-            event_date = st.date_input("Date of CVD Event")
+        with c4:
+            residence = st.selectbox("Residence", ["1=Urban", "2=Rural"])
+            tobacco = st.selectbox("Tobacco Use", ["1=Never Smoker", "2=Current Smoker", "3=Previous Smoker"])
+            activity = st.selectbox("Physical Activity", ["1=Physically Active", "2=Inactive"])
 
-        # Automatic Duration Calculation
-        end_date = event_date if cvd_occurred == "Yes" and event_date else datetime(2025, 11, 9).date()
-        duration_months = (end_date.year - enroll_date.year) * 12 + (end_date.month - enroll_date.month)
+        st.divider()
 
-        if st.form_submit_button("Submit Record to Database"):
-            new_row = pd.DataFrame([{
-                "HC Name": hc_name, "MRN": mrn, "Enroll Date": str(enroll_date),
-                "Alcohol": alcohol, "Avg Drinks": avg_drinks, "SBP": sbp, "DBP": dbp,
-                "BP Stage": bp_stage, "BMI": bmi_val, "BMI Category": bmi_cat,
-                "Duration (Months)": duration_months, "CVD Event": cvd_occurred, 
-                "Event Type": event_type, "Submit Email": "melakubelay93@gmail.com"
-            }])
+        # Section 5: Clinical & BMI Calculation
+        st.subheader("Section 5: Clinical & Physiological")
+        c5, c6 = st.columns(2)
+        with c5:
+            weight = st.number_input("Weight (kg)", min_value=1.0)
+            height = st.number_input("Height (cm)", min_value=1.0)
+            
+            # Automated BMI Calculation
+            bmi_val = round(weight / ((height/100)**2), 2) if height > 0 else 0
+            st.write(f"**Calculated BMI:** {bmi_val}")
+            
+            # Automated BMI Category
+            if bmi_val < 18.5: bmi_cat = "1=Underweight"
+            elif 18.5 <= bmi_val < 25: bmi_cat = "2=Normal"
+            elif 25 <= bmi_val < 30: bmi_cat = "3=Overweight"
+            else: bmi_cat = "4=Obese"
+            st.write(f"**Category:** {bmi_cat}")
+
+        with c6:
+            sbp = st.number_input("SBP (mmHg)")
+            dbp = st.number_input("DBP (mmHg)")
+            htn_duration = st.number_input("Duration of HTN (months)")
+
+        st.divider()
+
+        # Section 8: Outcome
+        st.subheader("Section 8: Outcome & Survival Data")
+        cvd_event = st.radio("CVD Event Occurred?", ["1=Yes", "2=No"])
+        
+        event_type = "N/A"
+        event_date = "N/A"
+        if cvd_event == "1=Yes":
+            event_type = st.selectbox("Type of CVD Event", ["1=Stroke", "2=Myocardial Infarction", "3=Heart Failure"])
+            event_date = st.text_input("Date of CVD Event (DD/MM/YYYY)")
+
+        # Submit Button
+        submitted = st.form_submit_button("Submit Record")
+
+        if submitted:
+            # Prepare data row
+            data = {
+                "Study ID": study_id,
+                "Facility": facility,
+                "Patient MRN": mrn,
+                "Cohort": cohort,
+                "Enrollment Date": enroll_date,
+                "Age": age,
+                "Sex": sex,
+                "Alcohol": alcohol,
+                "Drinks/Day": drink_count,
+                "BMI": bmi_val,
+                "BMI Category": bmi_cat,
+                "CVD Event": cvd_event,
+                "Event Type": event_type,
+                "Submission Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+
+            # 1. Update Google Sheet
             try:
-                conn.create(data=new_row)
-                st.success("Record successfully added to Google Sheets!")
+                existing_data = conn.read(worksheet="Sheet1")
+                updated_df = pd.concat([existing_data, pd.DataFrame([data])], ignore_index=True)
+                conn.update(worksheet="Sheet1", data=updated_df)
+                
+                # 2. Send Email
+                send_summary_email(data)
+                
+                st.success("🎉 Thank you! Data submitted successfully and sheet updated.")
                 st.balloons()
             except Exception as e:
-                st.error(f"Error connecting to Google Sheets: {e}")
+                st.error(f"An error occurred: {e}")
+
+# --- FOOTER ---
+st.markdown("---")
+st.caption("Developed for Mehal Amhara Saynt District Health Centers Research.")
