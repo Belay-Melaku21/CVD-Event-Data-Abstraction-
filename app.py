@@ -1,133 +1,123 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 import smtplib
 from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from datetime import datetime
 
-st.set_page_config(page_title="CVD Data Abstraction", layout="wide")
+# -------------------------
+# Secure Login
+# -------------------------
+def login():
+    st.title("🔒 Secure Login")
+    user = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        if user == "Belay Melaku" and password == "@Belay6669":
+            st.session_state["authenticated"] = True
+            st.success("Login successful!")
+        else:
+            st.error("Invalid credentials")
 
-# --- AUTHENTICATION ---
-def check_password():
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
-    if not st.session_state.authenticated:
-        st.title("🔐 Secure Data Entry Login")
-        user = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        if st.button("Login"):
-            if user == "Belay Melaku" and password == "@Belay6669":
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("Invalid credentials.")
-        return False
-    return True
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
 
-def send_summary_email(data_dict):
-    try:
-        sender = st.secrets["email_sender"]
-        pwd = st.secrets["email_password"]
-        receiver = st.secrets["email_receiver"]
-        msg = MIMEMultipart()
-        msg['From'] = sender
-        msg['To'] = receiver
-        msg['Subject'] = f"CVD Submission: MRN {data_dict['Patient MRN']}"
-        body = "\n".join([f"{k}: {v}" for k, v in data_dict.items()])
-        msg.attach(MIMEText(body, 'plain'))
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(sender, pwd)
-        server.send_message(msg)
-        server.quit()
-    except:
-        pass
+if not st.session_state["authenticated"]:
+    login()
+    st.stop()
 
-if check_password():
-    st.title("📋 Cardiovascular Disease Data Abstraction")
-    st.info("Study: Time to Cardiovascular Disease Event and Its Determinant Among Hypertensive Patients [cite: 2]")
+# -------------------------
+# Google Sheets Connection
+# -------------------------
+scope = ["https://spreadsheets.google.com/feeds",
+         "https://www.googleapis.com/auth/drive"]
+
+creds = ServiceAccountCredentials.from_json_keyfile_dict(
+    st.secrets["gcp_service_account"], scope)
+client = gspread.authorize(creds)
+sheet = client.open_by_url(st.secrets["sheet_url"]).sheet1
+
+# -------------------------
+# Disclaimer
+# -------------------------
+st.markdown("### 📜 Disclaimer")
+st.info("All data collected is confidential. Patient names are never recorded. "
+        "Only MRN and Study IDs are used to ensure anonymity.")
+
+# -------------------------
+# Data Collection Form
+# -------------------------
+with st.form("data_form", clear_on_submit=True):
+    study_id = st.text_input("Study ID")
+    mrn = st.text_input("Patient MRN")
+    age = st.number_input("Age", min_value=18, max_value=120)
+    sex = st.selectbox("Sex", ["Male", "Female"])
+    residence = st.selectbox("Residence", ["Urban", "Rural"])
     
-    st.warning("Professional Disclaimer: Patient names must never be recorded. Use only Medical Record Numbers (MRN) and Study IDs[cite: 5, 6].")
+    # Lifestyle factors
+    tobacco = st.selectbox("Tobacco Use", ["Never Smoker", "Current Smoker", "Previous Smoker"])
+    alcohol = st.selectbox("Alcohol Consumption", ["Non-user", "Current User"])
+    drinks_per_day = None
+    if alcohol == "Current User":
+        drinks_per_day = st.number_input("Average drinks/day", min_value=0.0)
+    
+    khat = st.selectbox("Khat Chewing", ["Never", "Current User", "History of regular use"])
+    physical_activity = st.selectbox("Physical Activity", ["Active", "Inactive"])
+    salt_intake = st.selectbox("Salt Intake", ["High", "Normal/Low"])
+    
+    # Clinical measurements
+    weight = st.number_input("Weight (kg)", min_value=1.0)
+    height = st.number_input("Height (cm)", min_value=50.0)
+    bmi = round(weight / ((height/100)**2), 2) if height > 0 else None
+    bmi_category = None
+    if bmi:
+        if bmi < 18.5:
+            bmi_category = "Underweight"
+        elif bmi < 25:
+            bmi_category = "Normal"
+        elif bmi < 30:
+            bmi_category = "Overweight"
+        else:
+            bmi_category = "Obese"
+        st.write(f"**BMI:** {bmi} ({bmi_category})")
+    
+    # Outcome
+    cvd_event = st.selectbox("CVD Event Occurred?", ["Yes", "No"])
+    cvd_type = None
+    if cvd_event == "Yes":
+        cvd_type = st.selectbox("Type of CVD Event", ["Stroke", "Myocardial Infarction", "Heart Failure"])
+    
+    submitted = st.form_submit_button("Submit")
 
-    # --- CONNECTION BLOCK ---
-    try:
-        # We use the built-in connection which will pull from [connections.gsheets]
-        conn = st.connection("gsheets", type=GSheetsConnection)
-    except Exception as e:
-        st.error(f"Connection Error: {e}")
-        st.stop()
+    if submitted:
+        # Save to Google Sheet
+        row = [study_id, mrn, age, sex, residence, tobacco, alcohol, drinks_per_day,
+               khat, physical_activity, salt_intake, weight, height, bmi, bmi_category,
+               cvd_event, cvd_type]
+        sheet.append_row(row)
 
-    with st.form("cvd_form", clear_on_submit=True):
-        st.subheader("Section 1: Administrative & Eligibility")
-        col1, col2 = st.columns(2)
-        with col1:
-            study_id = st.text_input("Study ID")
-            facility = st.selectbox("Facility Name", ["1=Densa", "2=Kotet", "3=Work-Mawcha", "4=Ahyo", "5=Atrons"])
-            mrn = st.text_input("Patient MRN ")
-        with col2:
-            cohort = st.radio("Cohort Group", ["1=Exposed (Hypertensive)", "2=Unexposed (Normotensive)"])
-            enroll_date = st.text_input("Enrollment Date (DD/MM/YYYY E.C.) [cite: 22]")
-            fup_date = st.text_input("Follow-up End Date (DD/MM/YYYY E.C.) [cite: 23]")
+        # Email summary
+        summary = f"""
+        Study ID: {study_id}
+        MRN: {mrn}
+        Age: {age}, Sex: {sex}, Residence: {residence}
+        Tobacco: {tobacco}, Alcohol: {alcohol}, Drinks/day: {drinks_per_day}
+        Khat: {khat}, Physical Activity: {physical_activity}, Salt Intake: {salt_intake}
+        Weight: {weight} kg, Height: {height} cm, BMI: {bmi} ({bmi_category})
+        CVD Event: {cvd_event}, Type: {cvd_type}
+        """
+        msg = MIMEText(summary)
+        msg["Subject"] = "New CVD Data Submission"
+        msg["From"] = "noreply@datacollection.com"
+        msg["To"] = "melakubelay93@gmail.com"
 
-        st.divider()
-        st.subheader("Socio-Demographics & Lifestyle")
-        c3, c4 = st.columns(2)
-        with c3:
-            age = st.number_input("Age (Years) [cite: 29]", min_value=18)
-            sex = st.selectbox("Sex", ["1=Male", "2=Female"])
-            alcohol = st.selectbox("Alcohol Consumption", ["1=Non-user", "2=Current User"])
-            drink_count = "NA"
-            if alcohol == "2=Current User":
-                drink_count = st.number_input("Average drinks/day [cite: 37]", min_value=0.0)
-        with c4:
-            residence = st.selectbox("Residence", ["1=Urban", "2=Rural"])
-            tobacco = st.selectbox("Tobacco Use", ["1=Never", "2=Current", "3=Previous"])
-            activity = st.selectbox("Physical Activity", ["1=Active", "2=Inactive"])
+        try:
+            with smtplib.SMTP("smtp.gmail.com", 587) as server:
+                server.starttls()
+                # Use app password for Gmail
+                server.login("your-email@gmail.com", "your-app-password")
+                server.send_message(msg)
+        except Exception as e:
+            st.error(f"Email failed: {e}")
 
-        st.divider()
-        st.subheader("Clinical & BMI")
-        c5, c6 = st.columns(2)
-        with c5:
-            weight = st.number_input("Weight (kg)", min_value=1.0)
-            height = st.number_input("Height (cm)", min_value=1.0)
-            bmi_val = round(weight / ((height/100)**2), 2) if height > 0 else 0
-            bmi_cat = "NA"
-            if bmi_val > 0:
-                if bmi_val < 18.5: bmi_cat = "1=Underweight"
-                elif bmi_val < 25: bmi_cat = "2=Normal"
-                elif bmi_val < 30: bmi_cat = "3=Overweight"
-                else: bmi_cat = "4=Obese"
-            st.info(f"BMI: {bmi_val} ({bmi_cat}) [cite: 44, 45]")
-        with c6:
-            sbp = st.number_input("SBP (mmHg)")
-            dbp = st.number_input("DBP (mmHg)")
-            htn_dur = st.text_input("HTN Duration (months)", "NA")
-
-        st.divider()
-        st.subheader("Outcome Data")
-        cvd_event = st.radio("CVD Event Occurred? [cite: 59]", ["1=Yes", "2=No"])
-        event_type = "NA"
-        if cvd_event == "1=Yes":
-            event_type = st.selectbox("Event Type", ["1=Stroke", "2=MI", "3=Heart Failure"])
-
-        submitted = st.form_submit_button("Submit Data")
-
-        if submitted:
-            data = {
-                "Study ID": study_id, "Facility": facility, "MRN": mrn, "Cohort": cohort,
-                "Age": age, "BMI": bmi_val, "BMI Category": bmi_cat, "CVD Event": cvd_event,
-                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
-            try:
-                # Use current sheet URL from secrets
-                df = conn.read(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"])
-                updated_df = pd.concat([df, pd.DataFrame([data])], ignore_index=True)
-                conn.update(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"], data=updated_df)
-                send_summary_email(data)
-                st.success("✅ Thank You! Data submitted and Sheet updated.")
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-st.markdown("---")
-st.caption("Data abstraction checklist version 1.0 [cite: 1]")
+        st.success("✅ Data submitted successfully! Thank you.")
