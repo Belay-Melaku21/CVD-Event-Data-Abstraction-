@@ -1,3 +1,5 @@
 streamlit
-st-gsheets-connection
 pandas
+gspread
+streamlit-gsheets
+smtplib
