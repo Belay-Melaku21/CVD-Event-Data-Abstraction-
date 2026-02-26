@@ -6,133 +6,174 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 
-st.set_page_config(page_title="CVD Data Abstraction", layout="wide")
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="CVD Research Portal", layout="wide")
 
 # --- AUTHENTICATION ---
 def check_password():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
+
     if not st.session_state.authenticated:
-        st.title("🔐 Secure Data Entry Login")
+        st.title("🔐 Clinical Data Portal Access")
         user = st.text_input("Username")
-        password = st.text_input("Password", type="password")
+        pw = st.text_input("Password", type="password")
         if st.button("Login"):
-            if user == "Belay Melaku" and password == "@Belay6669":
+            if user == "Belay Melaku" and pw == "@Belay6669":
                 st.session_state.authenticated = True
-                st.success("Login successful!")
                 st.rerun()
             else:
-                st.error("Invalid credentials.")
+                st.error("Invalid credentials")
         return False
     return True
 
-# --- EMAIL FUNCTION ---
-def send_summary_email(data_dict):
-    try:
-        sender = st.secrets["email_sender"]
-        pwd = st.secrets["email_password"]
-        receiver = st.secrets["email_receiver"]
-        msg = MIMEMultipart()
-        msg['From'] = sender
-        msg['To'] = receiver
-        msg['Subject'] = f"New CVD Record: MRN {data_dict.get('Patient MRN', 'NA')}"
-        body = "\n".join([f"{k}: {v}" for k, v in data_dict.items()])
-        msg.attach(MIMEText(body, 'plain'))
-        with smtplib.SMTP('smtp.gmail.com', 587) as server:
-            server.starttls()
-            server.login(sender, pwd)
-            server.send_message(msg)
-    except:
-        pass
+# --- EMAIL LOGIC ---
+def send_email_notification(data_summary):
+    sender_email = st.secrets["emails"]["smtp_user"]
+    receiver_email = "melakubelay93@gmail.com"
+    password = st.secrets["emails"]["smtp_pass"]
 
-if check_password():
-    st.title("📋 Cardiovascular Disease Data Abstraction")
-    [span_1](start_span)st.info("Study Title: Time to Cardiovascular Disease Event and Its Determinant Among Hypertensive Patients[span_1](end_span)")
-    
-    # [span_2](start_span)Professional Disclaimer[span_2](end_span)
-    [span_3](start_span)st.warning("Professional Disclaimer: Patient names must never be recorded. Use only Medical Record Numbers (MRN) and Study IDs to ensure anonymity[span_3](end_span).")
+    message = MIMEMultipart()
+    message["From"] = sender_email
+    message["To"] = receiver_email
+    message["Subject"] = f"New Study Entry: ID {data_summary['Study ID']}"
 
-    # --- CONNECTION ---
+    body = f"A new data entry has been submitted.\n\nSummary:\n{data_summary}"
+    message.attach(MIMEText(body, "plain"))
+
     try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(sender_email, password)
+        server.sendmail(sender_email, receiver_email, message.as_string())
+        server.quit()
     except Exception as e:
-        st.error(f"Connection Error: {e}")
-        st.stop()
+        st.error(f"Email notification failed: {e}")
 
-    with st.form("cvd_form", clear_on_submit=True):
-        # [span_4](start_span)Section 1: Administrative[span_4](end_span)
-        st.subheader("Section 1: Administrative & Eligibility")
+# --- APP START ---
+if check_password():
+    st.title("Time to CVD Event Research Portal")
+    
+    st.info("""**Professional Disclaimer:** This portal is designed for authorized professionals to record patient data. 
+    Please ensure all entries are handled with strict confidentiality and clinical precision. 
+    Your commitment to data integrity is vital.""")
+
+    # Connect to Google Sheets
+    conn = st.connection("gsheets", type=GSheetsConnection)
+
+    # Use a form to handle submission and reset
+    with st.form("research_form", clear_on_submit=True):
+        
+        # SECTION 1 & 2: ADMIN & ELIGIBILITY
         col1, col2 = st.columns(2)
         with col1:
-            study_id = st.text_input("Study ID")
-            facility = st.selectbox("Facility Name", ["1=Densa", "2=Kotet", "3=Work-Mawcha", "4=Ahyo", "5=Atrons"])
-            mrn = st.text_input("Patient MRN")
+            st.subheader("Section 1: Administrative")
+            study_id = st.text_input("1.1 Study ID")
+            facility = st.selectbox("1.2 Facility Name", ["Densa", "Kotet", "Work-Mawcha", "Ahyo", "Atrons"])
+            mrn = st.text_input("1.3 Patient MRN (Confidential)")
+            cohort = st.radio("1.4 Cohort Group", ["Exposed (Hypertensive)", "Unexposed (Normotensive)"])
+            enroll_date = st.date_input("1.5 Date of Enrollment (E.C.)")
+            end_date = st.date_input("1.6 Follow-up End Date (E.C.)")
+
         with col2:
-            cohort = st.radio("Cohort Group", ["1=Exposed (Hypertensive)", "2=Unexposed (Normotensive)"])
-            enroll_date = st.text_input("Date of Enrollment (E.C.)")
-            fup_end = st.text_input("Follow-up End Date (E.C.)")
+            st.subheader("Section 2: Eligibility")
+            age_check = st.radio("2.1 Age ≥18 years?", ["Yes", "No"])
+            prev_cvd = st.radio("2.2 Pre-existing CVD before enrollment?", ["Yes", "No"])
+            preg_htn = st.radio("2.3 Pregnancy-induced Hypertension?", ["Yes", "No"])
 
-        # [span_5](start_span)Section 4: Lifestyle[span_5](end_span)
-        st.subheader("Section 4: Lifestyle & Behavioral Factors")
-        c3, c4 = st.columns(2)
-        with c3:
-            tobacco = st.selectbox("Tobacco Use", ["1=Never Smoker", "2=Current Smoker", "3=Previous Smoker"])
-            alcohol = st.selectbox("Alcohol Consumption", ["1=Non-user", "2=Current User"])
-            # Dynamic Logic: Hide quantity if Non-user
-            drink_qty = "NA"
-            if alcohol == "2=Current User":
-                drink_qty = st.number_input("Average drinks/day", min_value=0.0)
-        with c4:
-            activity = st.selectbox("Physical Activity", ["1=Physically Active (≥30 min/day)", "2=Inactive"])
-            salt = st.selectbox("Salt Intake", ["1=High (Adds salt)", "2=Normal/Low"])
+        st.divider()
 
-        # [span_6](start_span)Section 5: Clinical[span_6](end_span)
-        st.subheader("Section 5: Clinical & Physiological Measurements")
-        c5, c6 = st.columns(2)
-        with c5:
+        # SECTION 3 & 4: DEMOGRAPHICS & LIFESTYLE
+        col3, col4 = st.columns(2)
+        with col3:
+            st.subheader("Section 3: Socio-Demographic")
+            age = st.number_input("3.3 Age (Years)", min_value=0, max_value=120)
+            sex = st.selectbox("3.4 Sex", ["Male", "Female"])
+            residence = st.selectbox("3.5 Residence", ["Urban", "Rural"])
+            edu = st.selectbox("3.6 Educational Status", ["No formal education", "Primary (1-8)", "Secondary (9-12)", "Higher"])
+            job = st.selectbox("3.7 Occupational Status", ["Government Employee", "Merchant/Trader", "Farmer", "Unemployed", "Other"])
+
+        with col4:
+            st.subheader("Section 4: Lifestyle")
+            tobacco = st.selectbox("4.1 Tobacco Use", ["Never Smoker", "Current Smoker", "Previous Smoker"])
+            alcohol = st.selectbox("4.2 Alcohol Consumption", ["Non-user", "Current User"])
+            
+            # BRANCHING LOGIC: Alcohol
+            alc_amount = 0
+            if alcohol == "Current User":
+                alc_amount = st.number_input("Average drinks/day", min_value=0)
+            
+            khat = st.selectbox("4.3 Khat Chewing", ["Never", "Current User", "History of regular use"])
+            phys_act = st.radio("4.4 Physical Active (≥30 min/day, 5 days/week)", ["Active", "Inactive"])
+            salt = st.radio("4.5 Salt Intake", ["High (Adds salt)", "Normal/Low"])
+
+        st.divider()
+
+        # SECTION 5: CLINICAL (BMI AUTOMATION)
+        st.subheader("Section 5: Clinical & Physiological")
+        c5_1, c5_2, c5_3 = st.columns(3)
+        with c5_1:
+            sbp = st.number_input("SBP (mmHg)", min_value=50)
+            dbp = st.number_input("DBP (mmHg)", min_value=30)
+            htn_stage = st.selectbox("5.2 Hypertension Stage", ["Pre-HTN", "Stage 1", "Stage 2", "Stage 3/4"])
+        
+        with c5_2:
             weight = st.number_input("Weight (kg)", min_value=1.0)
-            height = st.number_input("Height (cm)", min_value=1.0)
-            # [span_7](start_span)Automated BMI Calculation[span_7](end_span)
-            bmi_val = round(weight / ((height/100)**2), 2) if height > 0 else 0
-            if bmi_val < 18.5: bmi_cat = "1=Underweight"
-            elif 18.5 <= bmi_val < 25: bmi_cat = "2=Normal"
-            elif 25 <= bmi_val < 30: bmi_cat = "3=Overweight"
-            else: bmi_cat = "4=Obese"
-            [span_8](start_span)st.info(f"Automatically Calculated BMI: {bmi_val} kg/m² ({bmi_cat})[span_8](end_span)")
-        with c6:
-            sbp = st.number_input("Baseline SBP (mmHg)")
-            dbp = st.number_input("Baseline DBP (mmHg)")
-            htn_duration = st.text_input("Duration of HTN (months)", "NA")
+            height_cm = st.number_input("Height (cm)", min_value=50.0)
+            
+            # AUTOMATED BMI CALCULATION
+            bmi = 0.0
+            bmi_cat = "N/A"
+            if height_cm > 0:
+                bmi = round(weight / ((height_cm/100)**2), 2)
+                if bmi < 18.5: bmi_cat = "Underweight"
+                elif 18.5 <= bmi < 25: bmi_cat = "Normal"
+                elif 25 <= bmi < 30: bmi_cat = "Overweight"
+                else: bmi_cat = "Obese"
+            
+            st.metric("Calculated BMI", f"{bmi} kg/m²")
+            st.write(f"Category: **{bmi_cat}**")
 
-        # [span_9](start_span)Section 8: Outcome[span_9](end_span)
+        with c5_3:
+            htn_dur = st.number_input("5.5 Duration of HTN (Months)", min_value=0)
+            fam_hx = st.radio("5.6 Family History of CVD/HTN", ["Yes", "No"])
+
+        st.divider()
+
+        # SECTION 8: OUTCOME
         st.subheader("Section 8: Outcome & Survival Data")
-        cvd_event = st.radio("CVD Event Occurred?", ["1=Yes", "2=No"])
-        event_type = "NA"
-        if cvd_event == "1=Yes":
-            event_type = st.selectbox("Type of CVD Event", ["1=Stroke", "2=Myocardial Infarction", "3=Heart Failure"])
+        c8_1, c8_2 = st.columns(2)
+        with c8_1:
+            cvd_event = st.selectbox("8.1 CVD Event Occurred?", ["No", "Yes"])
+            event_type = "N/A"
+            event_date = "N/A"
+            if cvd_event == "Yes":
+                event_type = st.selectbox("8.2 Type of Event", ["Stroke", "Myocardial Infarction", "Heart Failure"])
+                event_date = st.date_input("8.3 Date of CVD Event")
+        
+        with c8_2:
+            censoring = st.selectbox("8.4 Censoring Details", ["N/A", "Lost to Follow-up", "Died (Non-CVD)", "Study ended without event"])
+            last_date = st.date_input("8.5 Date of Last Follow-up")
 
-        if st.form_submit_button("Submit Data"):
-            # [span_10](start_span)Handling Missing Data: write "NA" if not found[span_10](end_span)
-            record = {
-                "Study ID": study_id if study_id else "NA",
-                "Patient MRN": mrn if mrn else "NA",
-                "Facility": facility,
-                "Cohort": cohort,
-                "BMI": bmi_val,
-                "BMI Category": bmi_cat,
-                "CVD Event": cvd_event,
-                "Event Type": event_type,
-                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
-            try:
-                df = conn.read(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"])
-                updated_df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
-                conn.update(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"], data=updated_df)
-                send_summary_email(record)
-                [span_11](start_span)st.success("Thank you for your commitment to this vital research[span_11](end_span)!")
-                st.balloons()
-            except Exception as e:
-                st.error(f"Error: {e}")
+        # SUBMIT BUTTON
+        submit_button = st.form_submit_button("Submit Record")
 
-st.markdown("---")
-[span_12](start_span)st.caption("You are the 'foundation and eyes' of this study; our quality depends on your precision[span_12](end_span).")
+        if submit_button:
+            # Prepare data row
+            new_data = pd.DataFrame([{
+                "Study ID": study_id, "Facility": facility, "MRN": mrn, "Cohort": cohort,
+                "Enrollment Date": str(enroll_date), "Age": age, "BMI": bmi, "BMI Category": bmi_cat,
+                "SBP": sbp, "DBP": dbp, "Alcohol": alcohol, "Alcohol Amount": alc_amount,
+                "CVD Event": cvd_event, "Event Type": event_type, "Submission Time": datetime.now()
+            }])
+            
+            # 1. Update Google Sheets
+            existing_data = conn.read(worksheet="Sheet1")
+            updated_df = pd.concat([existing_data, new_data], ignore_index=True)
+            conn.update(worksheet="Sheet1", data=updated_df)
+            
+            # 2. Email Notification
+            send_email_notification(new_data.iloc[0].to_dict())
+            
+            st.success("Data successfully recorded and encrypted. Thank you for your dedication to professional medical documentation.")
+            st.balloons()
