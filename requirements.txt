@@ -2,4 +2,3 @@ streamlit
 pandas
 gspread
 streamlit-gsheets
-smtplib
