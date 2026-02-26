@@ -71,7 +71,7 @@ if username == "Belay Melaku" and password == "@Belay6669":
         submitted = st.form_submit_button("Submit")
         if submitted:
             # Save to Google Sheets
-            conn = st.connection("gsheets", type="gcs")
+            conn = st.connection("gsheets", type="gsheets")
             df = pd.DataFrame([{
                 "Study ID": study_id,
                 "Facility": facility,
@@ -102,11 +102,11 @@ if username == "Belay Melaku" and password == "@Belay6669":
             # Email Notification
             msg = MIMEText(f"New submission recorded for Study ID: {study_id}, MRN: {mrn}")
             msg["Subject"] = "New Health Data Submission"
-            msg["From"] = st.secrets["email"]["sender"]
+            msg["From"] = st.secrets["email"]["smtp_user"]
             msg["To"] = "melakubelay93@gmail.com"
 
             with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-                server.login(st.secrets["email"]["sender"], st.secrets["email"]["password"])
+                server.login(st.secrets["email"]["smtp_user"], st.secrets["email"]["smtp_pass"])
                 server.send_message(msg)
 
             st.success("Data submitted successfully and email notification sent ✅")
